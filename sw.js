@@ -1,42 +1,58 @@
-const CACHE = 'baygan-v1';
-const ASSETS = [
+/* نگهبان آفلاین بایگانی اطلاعات */
+const CACHE_NAME = 'baygani-v1';
+const PRECACHE = [
   './',
   './index.html',
   './manifest.json',
-  'https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap',
-  'https://fonts.gstatic.com/s/vazirmatn/v15/Dxx78j6PP2DvUJ1tGyV73OwKf2I',
-  'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+  './icon-192.png',
+  './icon-512.png'
 ];
 
+/* نصب: فایل‌های اصلی را در حافظه پنهان بگذار */
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(ASSETS).catch(()=>{}))
+    caches.open(CACHE_NAME).then(cache =>
+      Promise.allSettled(PRECACHE.map(p => cache.add(p)))
+    )
   );
   self.skipWaiting();
 });
 
+/* فعال‌سازی: کش‌های قدیمی را پاک کن */
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(names => Promise.all(
-      names.filter(n => n !== CACHE).map(n => caches.delete(n))
+    caches.keys().then(keys => Promise.all(
+      keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
     ))
   );
   self.clients.claim();
 });
 
+/* رهگیری درخواست‌ها */
 self.addEventListener('fetch', e => {
-  if(e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if(cached) return cached;
-      return fetch(e.request).then(res => {
-        if(res && res.status === 200 && res.type === 'basic'){
+  if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
+
+  /* فایل‌های خود سایت: اول از کش، اگر نبود از اینترنت */
+  if (url.origin === location.origin) {
+    e.respondWith(
+      caches.match(e.request).then(hit =>
+        hit || fetch(e.request).then(res => {
           const copy = res.clone();
-          caches.open(CACHE).then(cache => cache.put(e.request, copy));
-        }
-        return res;
-      }).catch(() => caches.match('./index.html'));
-    })
+          caches.open(CACHE_NAME).then(c => c.put(e.request, copy));
+          return res;
+        }).catch(() => caches.match('./index.html'))
+      )
+    );
+    return;
+  }
+
+  /* منابع بیرونی (فونت و کتابخانه‌ها): اول اینترنت، اگر نبود از کش */
+  e.respondWith(
+    fetch(e.request).then(res => {
+      const copy = res.clone();
+      caches.open(CACHE_NAME).then(c => c.put(e.request, copy));
+      return res;
+    }).catch(() => caches.match(e.request))
   );
 });
